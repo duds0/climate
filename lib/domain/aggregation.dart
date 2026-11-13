@@ -89,18 +89,8 @@ DayForecast buildDay({
     iconFromProb = true;
   }
 
-  // Confiança.
-  final tempModels = present
-      .where((m) => m.tMax != null || m.tMin != null)
-      .length;
-  final spreads = [tMaxRange?.spread, tMinRange?.spread].whereType<double>();
-  final tempSpread = spreads.isEmpty
-      ? null
-      : spreads.reduce((a, b) => a > b ? a : b);
-
+  // Confiança (apenas chuva).
   var confidence = assessConfidence(
-    tempSpread: tempSpread,
-    tempModels: tempModels,
     modelsWithRain: withRain,
     rainModels: precipValues.length,
     probability: probability,
@@ -179,7 +169,7 @@ WeatherReport buildReport({
   Map<String, double> weights = AppConstants.pesosModelos,
   double rainThresholdMm = AppConstants.rainThresholdMm,
 }) {
-  final nowLocal = bahiaWallClock(nowInstant);
+  final nowLocal = wallClock(nowInstant, forecast.utcOffset);
   final today = DateTime(nowLocal.year, nowLocal.month, nowLocal.day);
 
   final ensembleByDay = ensemble == null
@@ -217,5 +207,6 @@ WeatherReport buildReport({
     current: forecast.current,
     alerts: alerts,
     ensembleAvailable: ensemble != null && ensembleByDay.isNotEmpty,
+    utcOffset: forecast.utcOffset,
   );
 }

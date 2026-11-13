@@ -2,10 +2,14 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:clima_ipupiara/data/city_store.dart';
 import 'package:clima_ipupiara/data/dto.dart';
+import 'package:clima_ipupiara/data/geocoding_api.dart';
 import 'package:clima_ipupiara/data/weather_repository.dart';
+import 'package:clima_ipupiara/domain/city.dart';
 import 'package:clima_ipupiara/domain/models.dart';
 import 'package:clima_ipupiara/main.dart';
+import 'package:clima_ipupiara/presentation/cities_controller.dart';
 import 'package:clima_ipupiara/presentation/screens/day_detail_screen.dart';
 import 'package:clima_ipupiara/presentation/weather_controller.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +18,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Repositório falso: usa os JSONs reais salvos em test/fixtures.
 class FakeRepo extends WeatherRepository {
@@ -26,8 +31,15 @@ class FakeRepo extends WeatherRepository {
   final bool fail;
   final List<InmetAlert> alerts;
 
+  /// Cidades para as quais a previsão foi pedida (na ordem).
+  final requested = <String>[];
+
   @override
-  Future<WeatherSnapshot> load({bool force = false}) async {
+  Future<void> forget(City city) async {}
+
+  @override
+  Future<WeatherSnapshot> load(City city, {bool force = false}) async {
+    requested.add(city.id);
     if (fail) throw Exception('sem rede');
     final f =
         jsonDecode(File('test/fixtures/forecast15.json').readAsStringSync())
@@ -45,6 +57,41 @@ class FakeRepo extends WeatherRepository {
   }
 }
 
+/// Geocoding falso: devolve sempre a lista dada, sem rede.
+class FakeGeocoding extends GeocodingApi {
+  FakeGeocoding([this.results = const []]);
+  List<City> results;
+
+  @override
+  Future<List<City>> search(String query) async => results;
+
+  @override
+  Future<String?> resolveIbgeCode(City city) async => null;
+}
+
+final manaus = City.create(
+  name: 'Manaus',
+  admin1: 'Amazonas',
+  country: 'Brasil',
+  countryCode: 'BR',
+  latitude: -3.10194,
+  longitude: -60.025,
+  timezone: 'America/Manaus',
+);
+
+/// Controllers prontos para uma tela: Ipupiara é a única cidade (e favorita).
+({CitiesController cities, WeatherController weather, FakeGeocoding geo})
+_setup(FakeRepo repo, {List<City> found = const []}) {
+  SharedPreferences.setMockInitialValues({});
+  final geo = FakeGeocoding(found);
+  final cities = CitiesController(
+    CityStore(),
+    saved: SavedCities([City.ipupiara], City.ipupiara.id),
+    geocoding: geo,
+  );
+  return (cities: cities, weather: WeatherController(repo, cities), geo: geo);
+}
+
 Future<void> _loadFonts() async {
   Future<void> load(String family, List<String> files) async {
     final loader = FontLoader(family);
@@ -56,7 +103,11 @@ Future<void> _loadFonts() async {
     await loader.load();
   }
 
-  const dir = 'C:/flutter/bin/cache/artifacts/material_fonts';
+  // Sem as fontes reais o teste usa a "Ahem" (larga) e estoura o layout.
+  final root = Platform.environment['FLUTTER_ROOT'];
+  final dir = root != null
+      ? '$root/bin/cache/artifacts/material_fonts'
+      : 'C:/flutter/bin/cache/artifacts/material_fonts';
   if (!Directory(dir).existsSync()) return;
   await load('Roboto', [
     '$dir/roboto-regular.ttf',
@@ -70,10 +121,17 @@ Future<void> _loadFonts() async {
 
 final _boundaryKey = GlobalKey();
 
-Widget _app(WeatherController c, {Widget? home}) => RepaintBoundary(
+Widget _app(
+  ({CitiesController cities, WeatherController weather, FakeGeocoding geo}) s, {
+  Widget? home,
+}) => RepaintBoundary(
   key: _boundaryKey,
-  child: ChangeNotifierProvider.value(
-    value: c,
+  child: MultiProvider(
+    providers: [
+      Provider<GeocodingApi>.value(value: s.geo),
+      ChangeNotifierProvider<CitiesController>.value(value: s.cities),
+      ChangeNotifierProvider<WeatherController>.value(value: s.weather),
+    ],
     child: home == null
         ? const ClimaApp()
         : MaterialApp(home: home, debugShowCheckedModeBanner: false),
@@ -110,7 +168,7 @@ void main() {
     t,
   ) async {
     phone(t);
-    final c = WeatherController(
+    final s = _setup(
       FakeRepo(
         alerts: [
           const InmetAlert(
@@ -126,10 +184,10 @@ void main() {
         ],
       ),
     );
-    await c.load();
-    await t.pumpWidget(_app(c));
+    await s.weather.load();
+    await t.pumpWidget(_app(s));
     await t.pumpAndSettle();
-    expect(find.text('Ipupiara · BA'), findsOneWidget);
+    expect(find.text('Ipupiara · Bahia'), findsOneWidget);
     expect(find.textContaining('Alerta do INMET'), findsOneWidget);
     await _shot(t, '1_home');
 
@@ -150,17 +208,25 @@ void main() {
 
   testWidgets('Detalhe do dia', (t) async {
     phone(t);
-    final c = WeatherController(FakeRepo());
-    await c.load();
-    final day = c.report!.days[10];
+    final s = _setup(FakeRepo());
+    await s.weather.load();
+    final day = s.weather.report!.days[10];
     await t.pumpWidget(
       _app(
-        c,
+        s,
         home: DayDetailScreen(day: day, today: DateTime(2026, 11, 10)),
       ),
     );
     await t.pumpAndSettle();
     expect(find.text('Por modelo'.toUpperCase()), findsOneWidget);
+    // A confiança explica só a chuva (a lista é preguiçosa: rola até o fim).
+    final rainLine = find.textContaining('Chuva ·', findRichText: true);
+    await t.scrollUntilVisible(rainLine, 300);
+    expect(rainLine, findsOneWidget);
+    expect(
+      find.textContaining('Temperatura ·', findRichText: true),
+      findsNothing,
+    );
     await _shot(t, '3_detail');
   });
 
@@ -168,9 +234,9 @@ void main() {
     phone(t);
     t.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
     addTearDown(t.platformDispatcher.clearPlatformBrightnessTestValue);
-    final c = WeatherController(FakeRepo(withEnsemble: false));
-    await c.load();
-    await t.pumpWidget(_app(c));
+    final s = _setup(FakeRepo(withEnsemble: false));
+    await s.weather.load();
+    await t.pumpWidget(_app(s));
     await t.pumpAndSettle();
     expect(find.textContaining('Probabilidade estimada'), findsOneWidget);
     await _shot(t, '5_home_dark_noensemble');
@@ -178,10 +244,53 @@ void main() {
 
   testWidgets('Erro sem cache: botão Tentar novamente', (t) async {
     phone(t);
-    final c = WeatherController(FakeRepo(fail: true));
-    await c.load();
-    await t.pumpWidget(_app(c));
+    final s = _setup(FakeRepo(fail: true));
+    await s.weather.load();
+    await t.pumpWidget(_app(s));
     await t.pumpAndSettle();
     expect(find.text('Tentar novamente'), findsOneWidget);
+  });
+
+  testWidgets('Aba Cidades: pesquisar, adicionar, favoritar e abrir', (
+    t,
+  ) async {
+    phone(t);
+    final repo = FakeRepo();
+    final s = _setup(repo, found: [manaus]);
+    await s.weather.load();
+    await t.pumpWidget(_app(s));
+    await t.pumpAndSettle();
+    expect(repo.requested, [City.ipupiara.id]);
+
+    await t.tap(find.text('Cidades'));
+    await t.pumpAndSettle();
+    expect(find.text('Minhas cidades'.toUpperCase()), findsOneWidget);
+
+    // Pesquisa e adiciona.
+    await t.enterText(find.byType(TextField), 'Manaus');
+    await t.pump(const Duration(milliseconds: 500));
+    await t.pumpAndSettle();
+    await t.tap(find.byKey(ValueKey('result-${manaus.id}')));
+    await t.pumpAndSettle();
+    expect(s.cities.contains(manaus), isTrue);
+    expect(find.byKey(ValueKey('city-${manaus.id}')), findsOneWidget);
+
+    // Favorita a nova cidade: a estrela passa de Ipupiara para Manaus.
+    await t.tap(
+      find.descendant(
+        of: find.byKey(ValueKey('city-${manaus.id}')),
+        matching: find.byIcon(Icons.star_border),
+      ),
+    );
+    await t.pumpAndSettle();
+    expect(s.cities.favoriteId, manaus.id);
+    expect(find.byIcon(Icons.star), findsOneWidget);
+
+    // Tocar na cidade mostra a previsão dela na aba Hoje.
+    await t.tap(find.byKey(ValueKey('city-${manaus.id}')));
+    await t.pumpAndSettle();
+    expect(repo.requested.last, manaus.id);
+    expect(find.text('Manaus · Amazonas'), findsOneWidget);
+    await _shot(t, '6_cities');
   });
 }

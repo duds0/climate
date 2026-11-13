@@ -10,9 +10,10 @@ class CacheEntry {
 
 /// Cache local da última resposta bem-sucedida de cada fonte.
 class WeatherCache {
-  static const forecastKey = 'forecast';
-  static const ensembleKey = 'ensemble';
-  static const alertsKey = 'alerts';
+  // Uma entrada por cidade: o cache de uma cidade nunca vaza para outra.
+  static String forecastKey(String cityId) => 'forecast.$cityId';
+  static String ensembleKey(String cityId) => 'ensemble.$cityId';
+  static String alertsKey(String cityId) => 'alerts.$cityId';
 
   Future<CacheEntry?> read(String key) async {
     try {
@@ -33,6 +34,23 @@ class WeatherCache {
       await p.setInt('cache.$key.ts', DateTime.now().millisecondsSinceEpoch);
     } catch (_) {
       // Cache é só otimização: falha silenciosa.
+    }
+  }
+
+  /// Apaga tudo que foi guardado para a cidade (ao removê-la da lista).
+  Future<void> clearCity(String cityId) async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      for (final key in [
+        forecastKey(cityId),
+        ensembleKey(cityId),
+        alertsKey(cityId),
+      ]) {
+        await p.remove('cache.$key');
+        await p.remove('cache.$key.ts');
+      }
+    } catch (_) {
+      // Falha silenciosa: sobra só um cache sem uso.
     }
   }
 }

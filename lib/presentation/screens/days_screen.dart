@@ -17,7 +17,7 @@ class DaysScreen extends StatelessWidget {
       bottom: false,
       child: ReportView(
         builder: (context, report, c) {
-          final today = bahiaWallClock(DateTime.now());
+          final today = wallClock(DateTime.now(), report.utcOffset);
           final theme = Theme.of(context);
           final n = report.days.length;
           final children = <Widget>[
@@ -33,7 +33,7 @@ class DaysScreen extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    'Média de ECMWF, ICON e GFS',
+                    '${c.city.name} · média de ECMWF, ICON e GFS',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),

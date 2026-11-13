@@ -13,15 +13,19 @@ class ForecastInput {
     required this.hourlyPrecip,
     required this.hourlyCode,
     required this.current,
+    this.utcOffset = Duration.zero,
   });
 
-  /// yyyy-MM-dd (já no fuso America/Bahia).
+  /// Deslocamento do fuso da cidade em relação ao UTC (`utc_offset_seconds`).
+  final Duration utcOffset;
+
+  /// yyyy-MM-dd (já no fuso da cidade).
   final List<String> dates;
 
   /// modelo -> lista (um item por dia, alinhada com [dates]).
   final Map<String, List<ModelDay>> dailyByModel;
 
-  /// yyyy-MM-ddTHH:mm (horário local de Bahia).
+  /// yyyy-MM-ddTHH:mm (horário local da cidade).
   final List<String> hourlyTimes;
   final Map<String, List<double?>> hourlyTemp;
   final Map<String, List<double?>> hourlyPrecip;
@@ -33,7 +37,7 @@ class ForecastInput {
 class EnsembleInput {
   const EnsembleInput({required this.times, required this.members});
 
-  /// yyyy-MM-ddTHH:mm (horário local de Bahia).
+  /// yyyy-MM-ddTHH:mm (horário local da cidade).
   final List<String> times;
 
   /// sufixo do modelo -> lista de membros (inclui a rodada de controle),

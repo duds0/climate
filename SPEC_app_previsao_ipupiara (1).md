@@ -1,5 +1,7 @@
 # App de previsão do tempo para Ipupiara-BA (Flutter)
 
+> **Atualização:** o app agora se chama **Climate** e suporta qualquer cidade (aba Cidades, uma cidade favorita que abre ao iniciar). Ipupiara-BA é só a cidade inicial. A confiança passou a considerar **apenas a chuva** (a regra de temperatura da seção 4 foi removida). Onde este documento diz "Ipupiara", "fuso fixo" ou "múltiplas cidades fora de escopo", vale o que está acima.
+
 ## 1. Objetivo
 
 App Flutter de uso pessoal que mostra a previsão do tempo de **Ipupiara-BA** com a maior precisão possível, combinando vários modelos meteorológicos da Open-Meteo. O app mostra uma "média" dos modelos, a probabilidade de chuva e um indicador de confiança. Não mostra apenas um número único.

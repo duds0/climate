@@ -4,8 +4,8 @@ import 'models.dart';
 /// Soma, por dia local, a precipitação horária de cada membro do ensemble e
 /// conta quantos passam do limiar.
 ///
-/// Os horários de [EnsembleInput.times] já vêm no fuso America/Bahia (a
-/// requisição pede `timezone=America/Bahia`), então o dia é o prefixo
+/// Os horários de [EnsembleInput.times] já vêm no fuso da cidade (a
+/// requisição pede o mesmo `timezone` da previsão), então o dia é o prefixo
 /// `yyyy-MM-dd`. Membros sem nenhum dado no dia são ignorados naquele dia.
 Map<String, EnsembleDay> aggregateEnsemble(
   EnsembleInput input, {

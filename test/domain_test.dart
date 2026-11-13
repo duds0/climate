@@ -192,15 +192,25 @@ void main() {
       expect(r['2026-11-10']!.probability, 1.0);
     });
 
-    test('bahiaDateKey respeita UTC-3 na virada do dia', () {
+    test('localDateKey respeita o fuso na virada do dia (UTC-3)', () {
+      const utc3 = Duration(hours: -3);
       expect(
-        bahiaDateKey(DateTime.utc(2026, 11, 11, 2)),
+        localDateKey(DateTime.utc(2026, 11, 11, 2), utc3),
         '2026-11-10',
-      ); // 23h em Bahia
+      ); // 23h locais
       expect(
-        bahiaDateKey(DateTime.utc(2026, 11, 11, 3)),
+        localDateKey(DateTime.utc(2026, 11, 11, 3), utc3),
         '2026-11-11',
-      ); // 00h em Bahia
+      ); // 00h locais
+    });
+
+    test('localDateKey com outros fusos (UTC-5 e UTC+9)', () {
+      const utc5 = Duration(hours: -5);
+      const tokyo = Duration(hours: 9);
+      expect(localDateKey(DateTime.utc(2026, 11, 11, 4), utc5), '2026-11-10');
+      expect(localDateKey(DateTime.utc(2026, 11, 11, 5), utc5), '2026-11-11');
+      expect(localDateKey(DateTime.utc(2026, 11, 10, 15), tokyo), '2026-11-11');
+      expect(wallClock(DateTime.utc(2026, 11, 10, 15), tokyo).hour, 0);
     });
 
     test(
@@ -243,51 +253,40 @@ void main() {
     });
   });
 
-  group('confiança', () {
-    ConfidenceResult c({double? spread, int wr = 0, int rm = 3, double? p}) =>
-        assessConfidence(
-          tempSpread: spread,
-          tempModels: 3,
-          modelsWithRain: wr,
-          rainModels: rm,
-          probability: p,
-        );
-
-    test('limiares de temperatura 2 °C e 4 °C', () {
-      expect(temperatureConfidence(2.0), Confidence.alta);
-      expect(temperatureConfidence(2.01), Confidence.media);
-      expect(temperatureConfidence(4.0), Confidence.media);
-      expect(temperatureConfidence(4.01), Confidence.baixa);
-    });
+  group('confiança (só chuva)', () {
+    ConfidenceResult c({int wr = 0, int rm = 3, double? p}) =>
+        assessConfidence(modelsWithRain: wr, rainModels: rm, probability: p);
 
     test('chuva: todos concordam = alta; divergem = baixa', () {
-      expect(c(spread: 1, wr: 0, p: 0.1).level, Confidence.alta);
-      expect(c(spread: 1, wr: 3, p: 0.95).level, Confidence.alta);
-      expect(c(spread: 1, wr: 1, p: 0.9).level, Confidence.baixa);
+      expect(c(wr: 0, p: 0.1).level, Confidence.alta);
+      expect(c(wr: 3, p: 0.95).level, Confidence.alta);
+      expect(c(wr: 1, p: 0.9).level, Confidence.baixa);
     });
 
     test('probabilidade entre 30% e 70% (inclusive) rebaixa um nível', () {
-      expect(c(spread: 1, wr: 0, p: 0.30).level, Confidence.media);
-      expect(c(spread: 1, wr: 0, p: 0.70).level, Confidence.media);
-      expect(c(spread: 1, wr: 0, p: 0.29).level, Confidence.alta);
-      expect(c(spread: 1, wr: 0, p: 0.71).level, Confidence.alta);
-    });
-
-    test('confiança final é a pior das duas', () {
-      expect(c(spread: 5, wr: 0, p: 0.0).level, Confidence.baixa);
-      expect(c(spread: 3, wr: 0, p: 0.0).level, Confidence.media);
+      expect(c(wr: 0, p: 0.30).level, Confidence.media);
+      expect(c(wr: 0, p: 0.70).level, Confidence.media);
+      expect(c(wr: 0, p: 0.29).level, Confidence.alta);
+      expect(c(wr: 0, p: 0.71).level, Confidence.alta);
     });
 
     test('um único modelo nunca é "alta"', () {
-      final r = assessConfidence(
-        tempSpread: 0,
-        tempModels: 1,
-        modelsWithRain: 0,
-        rainModels: 1,
-        probability: 0,
-      );
+      final r = c(wr: 0, rm: 1, p: 0);
       expect(r.level, Confidence.baixa);
       expect(r.singleModel, isTrue);
+    });
+
+    test('temperatura divergente não afeta a confiança', () {
+      final day = DateTime(2026, 11, 10);
+      final d = buildDay(
+        date: day,
+        models: [
+          md('a', max: 25, min: 15, precip: 0),
+          md('b', max: 35, min: 25, precip: 0), // 10 °C de diferença
+          md('c', max: 30, min: 20, precip: 0),
+        ],
+      );
+      expect(d.confidence.level, Confidence.alta);
     });
   });
 
@@ -383,8 +382,8 @@ void main() {
         nowInstant: DateTime.utc(2026, 11, 10, 16),
       );
       final last = report.days.last;
-      // Só o GFS tem temperatura -> um único modelo -> confiança baixa.
-      expect(last.confidence.temperature, Confidence.baixa);
+      // Só o GFS cobre o último dia: a confiança nunca é "alta".
+      expect(last.confidence.level, isNot(Confidence.alta));
       expect(last.tMax, isNotNull);
     });
 
