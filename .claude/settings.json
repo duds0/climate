@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -m 20 -L -A 'Mozilla/5.0' https://satelite.cptec.inpe.br/acervoweb/goesr -o /tmp/acervo.html)",
+      "Read(//tmp/**)"
+    ]
+  }
+}
