@@ -1,14 +1,6 @@
 import '../core/constants.dart';
 import 'models.dart';
 
-/// Classifica a amplitude de temperatura entre modelos.
-Confidence temperatureConfidence(double? spread) {
-  if (spread == null) return Confidence.baixa;
-  if (spread <= AppConstants.tempSpreadHigh) return Confidence.alta;
-  if (spread <= AppConstants.tempSpreadMedium) return Confidence.media;
-  return Confidence.baixa;
-}
-
 /// Chuva: concordância entre modelos (todos com ou todos sem chuva = alta,
 /// senão baixa); probabilidade entre 30% e 70% rebaixa um nível.
 Confidence rainConfidence({
@@ -28,32 +20,22 @@ bool isUncertainProbability(double? p) =>
     p >= AppConstants.uncertainProbLow &&
     p <= AppConstants.uncertainProbHigh;
 
-/// Confiança do dia = a pior entre temperatura e chuva.
+/// Confiança do dia: considera apenas a previsão de chuva.
 ConfidenceResult assessConfidence({
-  required double? tempSpread,
-  required int tempModels,
   required int modelsWithRain,
   required int rainModels,
   required double? probability,
 }) {
-  final single = tempModels < 2 && rainModels < 2;
-  final temp = tempModels < 2
-      ? Confidence.baixa
-      : temperatureConfidence(tempSpread);
-  final rain = rainConfidence(
-    modelsWithRain: modelsWithRain,
-    modelsAvailable: rainModels,
-    probability: probability,
-  );
   return ConfidenceResult(
-    level: Confidence.worst(temp, rain),
-    temperature: temp,
-    rain: rain,
-    tempSpread: tempSpread,
+    level: rainConfidence(
+      modelsWithRain: modelsWithRain,
+      modelsAvailable: rainModels,
+      probability: probability,
+    ),
     modelsAgreeOnRain:
         rainModels >= 2 &&
         (modelsWithRain == 0 || modelsWithRain == rainModels),
     probabilityUncertain: isUncertainProbability(probability),
-    singleModel: single,
+    singleModel: rainModels < 2,
   );
 }

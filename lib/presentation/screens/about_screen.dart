@@ -89,8 +89,8 @@ class AboutScreen extends StatelessWidget {
                     'passam de ${AppConstants.rainThresholdMm.toStringAsFixed(0)} mm no dia.',
                   ),
                   _Para(
-                    'A confiança é Alta, Média ou Baixa conforme a divergência entre os modelos '
-                    'na temperatura e na chuva.',
+                    'A confiança é Alta, Média ou Baixa e vale só para a chuva: depende de os '
+                    'modelos concordarem se vai chover e de a probabilidade estar longe do meio-termo.',
                   ),
                   _Para(
                     'Depois de 7 dias o ICON deixa de cobrir e, depois de cerca de 11, o GFS '
@@ -140,8 +140,8 @@ class AboutScreen extends StatelessWidget {
           const SizedBox(height: 20),
           Center(
             child: Text(
-              '${AppConstants.cityName}-${AppConstants.stateCode} · '
-              '${AppConstants.latitude.toStringAsFixed(2)}, ${AppConstants.longitude.toStringAsFixed(2)}',
+              '${c.city.headerLabel} · '
+              '${c.city.latitude.toStringAsFixed(2)}, ${c.city.longitude.toStringAsFixed(2)}',
               style: theme.textTheme.labelSmall?.copyWith(color: muted),
             ),
           ),

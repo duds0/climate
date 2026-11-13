@@ -1,33 +1,53 @@
 // ignore_for_file: avoid_print
-// Verificação ponta a ponta contra as APIs reais: dart run tool/live_check.dart
+// Verificação ponta a ponta contra as APIs reais:
+//   dart run tool/live_check.dart [nome da cidade]   (padrão: Ipupiara)
 import 'dart:convert';
 
-import 'package:clima_ipupiara/core/constants.dart';
 import 'package:clima_ipupiara/data/dto.dart';
+import 'package:clima_ipupiara/data/geocoding_api.dart';
 import 'package:clima_ipupiara/data/weather_api.dart';
 import 'package:clima_ipupiara/domain/aggregation.dart';
 import 'package:clima_ipupiara/domain/weather_code.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
+  final geocoding = GeocodingApi();
+  final query = args.isEmpty ? 'Ipupiara' : args.join(' ');
+  final found = await geocoding.search(query);
+  if (found.isEmpty) {
+    print('Nenhuma cidade encontrada para "$query".');
+    return;
+  }
+  var city = found.first;
+  if (city.isBrazil) {
+    city = city.copyWith(ibgeCode: await geocoding.resolveIbgeCode(city));
+  }
+  print(
+    'cidade: ${city.fullLabel} (${city.latitude}, ${city.longitude}) '
+    'tz=${city.timezone} ibge=${city.ibgeCode}',
+  );
+
   final api = WeatherApi();
   final f = ForecastDto.parse(
-    jsonDecode(await api.forecastRaw()) as Map<String, dynamic>,
+    jsonDecode(await api.forecastRaw(city)) as Map<String, dynamic>,
   );
   final e = EnsembleDto.parse(
-    jsonDecode(await api.ensembleRaw()) as Map<String, dynamic>,
+    jsonDecode(await api.ensembleRaw(city)) as Map<String, dynamic>,
   );
+  print('offset UTC: ${f.utcOffset.inHours}h');
   var alerts = <dynamic>[];
-  try {
-    alerts = InmetDto.parse(
-      jsonDecode(await api.inmetRaw()),
-      ibgeCode: AppConstants.ibgeCode,
-    );
-  } catch (err) {
-    print('INMET falhou: $err');
+  if (city.ibgeCode != null) {
+    try {
+      alerts = InmetDto.parse(
+        jsonDecode(await api.inmetRaw()),
+        ibgeCode: city.ibgeCode!,
+      );
+    } catch (err) {
+      print('INMET falhou: $err');
+    }
   }
   final r = buildReport(forecast: f, ensemble: e, nowInstant: DateTime.now());
   print(
-    'membros ensemble: ${e.totalMembers}; dias: ${r.days.length}; horas: ${r.hours.length}; alertas Ipupiara: ${alerts.length}',
+    'membros ensemble: ${e.totalMembers}; dias: ${r.days.length}; horas: ${r.hours.length}; alertas: ${alerts.length}',
   );
   print(
     'agora: ${r.current?.temperature}° ${weatherDescription(r.current?.weatherCode ?? 3)}',
@@ -40,4 +60,5 @@ Future<void> main() async {
     );
   }
   api.close();
+  geocoding.close();
 }

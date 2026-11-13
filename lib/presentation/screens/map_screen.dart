@@ -3,11 +3,13 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/constants.dart';
-import '../../domain/time_utils.dart';
+import '../../domain/city.dart';
+import '../cities_controller.dart';
 import '../widgets/common.dart';
 
 /// Aba Mapa: radar/nuvens do Windy (WebView) e satélite GOES-19 do CPTEC/INPE.
@@ -25,6 +27,7 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final city = context.select<CitiesController, City>((c) => c.active);
     return SafeArea(
       bottom: false,
       child: Column(
@@ -35,7 +38,7 @@ class _MapScreenState extends State<MapScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Mapa',
+                  'Mapa · ${city.name}',
                   style: theme.textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -67,7 +70,11 @@ class _MapScreenState extends State<MapScreen> {
           Expanded(
             child: IndexedStack(
               index: _tab,
-              children: const [_WindyView(), _SatelliteView()],
+              children: [
+                // Nova chave = novo WebView centrado na cidade escolhida.
+                _WindyView(key: ValueKey(city.id), city: city),
+                _SatelliteView(city: city),
+              ],
             ),
           ),
         ],
@@ -86,7 +93,8 @@ bool get _webViewSupported =>
         defaultTargetPlatform == TargetPlatform.iOS);
 
 class _WindyView extends StatefulWidget {
-  const _WindyView();
+  const _WindyView({super.key, required this.city});
+  final City city;
 
   @override
   State<_WindyView> createState() => _WindyViewState();
@@ -100,6 +108,10 @@ class _WindyViewState extends State<_WindyView>
 
   @override
   bool get wantKeepAlive => true;
+
+  Uri get _windyUri => Uri.parse(
+    AppConstants.windyUrl(widget.city.latitude, widget.city.longitude),
+  );
 
   @override
   void initState() {
@@ -118,7 +130,7 @@ class _WindyViewState extends State<_WindyView>
             },
           ),
         )
-        ..loadRequest(Uri.parse(AppConstants.windyUrl));
+        ..loadRequest(_windyUri);
     }
   }
 
@@ -148,10 +160,8 @@ class _WindyViewState extends State<_WindyView>
               ),
               const SizedBox(height: 18),
               FilledButton.tonalIcon(
-                onPressed: () => launchUrl(
-                  Uri.parse(AppConstants.windyUrl),
-                  mode: LaunchMode.externalApplication,
-                ),
+                onPressed: () =>
+                    launchUrl(_windyUri, mode: LaunchMode.externalApplication),
                 icon: const Icon(Icons.open_in_new),
                 label: const Text('Abrir no navegador'),
               ),
@@ -195,7 +205,8 @@ class _WindyViewState extends State<_WindyView>
 // ---------------------------------------------------------------------------
 
 class _SatelliteView extends StatefulWidget {
-  const _SatelliteView();
+  const _SatelliteView({required this.city});
+  final City city;
 
   @override
   State<_SatelliteView> createState() => _SatelliteViewState();
@@ -203,11 +214,34 @@ class _SatelliteView extends StatefulWidget {
 
 class _SatelliteViewState extends State<_SatelliteView>
     with AutomaticKeepAliveClientMixin {
-  // Posição aproximada de Ipupiara na imagem (fração de largura/altura).
-  // Calibrada pela grade lat/lon da própria imagem (2192 x 2320 px).
-  static const _markerX = 0.80;
-  static const _markerY = 0.515;
+  // A imagem é uma projeção equirretangular (2192 x 2320 px): longitude de
+  // 115°W a 25°W e latitude de 35°N a 55°S, calibradas pela grade da própria
+  // imagem (medidas na versão reduzida de 1876 x 1986 px).
   static const _aspect = 2192 / 2320;
+  static const _refW = 1876.0;
+  static const _refH = 1986.0;
+  static const _plotLeft = 40.0;
+  static const _plotTop = 85.0;
+  static const _plotW = 1822.0; // 90° de longitude
+  static const _plotH = 1800.0; // 90° de latitude
+
+  /// Posição da cidade na imagem (fração de largura/altura); null se estiver
+  /// fora da área coberta.
+  ({double x, double y})? get _marker {
+    final lat = widget.city.latitude;
+    final lon = widget.city.longitude;
+    if (lon < -115 || lon > -25 || lat > 35 || lat < -55) return null;
+    return (
+      x: (_plotLeft + (lon + 115) * _plotW / 90) / _refW,
+      y: (_plotTop + (35 - lat) * _plotH / 90) / _refH,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _SatelliteView old) {
+    super.didUpdateWidget(old);
+    if (old.city.id != widget.city.id) _transformInit = false;
+  }
 
   final _transform = TransformationController();
   bool _transformInit = false;
@@ -295,7 +329,8 @@ class _SatelliteViewState extends State<_SatelliteView>
             onRetry: _retry,
           );
         }
-        final local = bahiaWallClock(latest.utc);
+        final local = latest.utc.toLocal();
+        final marker = _marker;
         final hh = local.hour.toString().padLeft(2, '0');
         final mm = local.minute.toString().padLeft(2, '0');
 
@@ -310,15 +345,17 @@ class _SatelliteViewState extends State<_SatelliteView>
                     color: Colors.black,
                     child: LayoutBuilder(
                       builder: (context, box) {
-                        // Mostra a imagem em "cover" e centraliza em Ipupiara.
+                        // Mostra a imagem em "cover" e centraliza na cidade.
                         final viewW = box.maxWidth;
                         final viewH = box.maxHeight;
                         final imgW = viewW;
                         final imgH = imgW / _aspect;
                         if (!_transformInit) {
-                          const zoom = 2.6;
-                          final dx = viewW / 2 - _markerX * imgW * zoom;
-                          final dy = viewH / 2 - _markerY * imgH * zoom;
+                          final zoom = marker == null ? 1.0 : 2.6;
+                          final mx = marker?.x ?? 0.5;
+                          final my = marker?.y ?? 0.5;
+                          final dx = viewW / 2 - mx * imgW * zoom;
+                          final dy = viewH / 2 - my * imgH * zoom;
                           _transform.value = Matrix4.identity()
                             ..translateByDouble(dx, dy, 0, 1)
                             ..scaleByDouble(zoom, zoom, 1, 1);
@@ -357,23 +394,24 @@ class _SatelliteViewState extends State<_SatelliteView>
                                     ),
                                   ),
                                 ),
-                                Positioned(
-                                  left: _markerX * imgW - 9,
-                                  top: _markerY * imgH - 9,
-                                  child: Container(
-                                    width: 18,
-                                    height: 18,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: Colors.white,
-                                        width: 2,
+                                if (marker != null)
+                                  Positioned(
+                                    left: marker.x * imgW - 9,
+                                    top: marker.y * imgH - 9,
+                                    child: Container(
+                                      width: 18,
+                                      height: 18,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: Colors.white,
+                                          width: 2,
+                                        ),
+                                        color: theme.colorScheme.primary
+                                            .withValues(alpha: 0.5),
                                       ),
-                                      color: theme.colorScheme.primary
-                                          .withValues(alpha: 0.5),
                                     ),
                                   ),
-                                ),
                               ],
                             ),
                           ),

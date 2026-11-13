@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../core/constants.dart';
+import '../domain/city.dart';
 import '../domain/inputs.dart';
 import '../domain/models.dart';
 import 'dto.dart';
@@ -36,28 +37,32 @@ class WeatherRepository {
   final WeatherApi _api;
   final WeatherCache _cache;
 
-  /// Carrega os dados. Sem [force], reaproveita o cache com menos de 30 min.
-  /// Lança exceção só se não houver rede E não houver cache utilizável.
-  Future<WeatherSnapshot> load({bool force = false}) async {
-    final cachedForecast = await _cache.read(WeatherCache.forecastKey);
+  /// Apaga o cache de uma cidade removida da lista.
+  Future<void> forget(City city) => _cache.clearCity(city.id);
+
+  /// Carrega os dados de [city]. Sem [force], reaproveita o cache com menos
+  /// de 30 min. Lança exceção só se não houver rede E não houver cache utilizável.
+  Future<WeatherSnapshot> load(City city, {bool force = false}) async {
+    final cachedForecast = await _cache.read(WeatherCache.forecastKey(city.id));
 
     if (!force &&
         cachedForecast != null &&
         cachedForecast.age < AppConstants.cacheTtl) {
-      final snap = await _fromCache(cachedForecast, offline: false);
+      final snap = await _fromCache(city, cachedForecast, offline: false);
       if (snap != null) return snap;
     }
 
     // Busca as três fontes em paralelo; só a previsão é obrigatória.
-    final forecastF = _api.forecastRaw();
+    final forecastF = _api.forecastRaw(city);
     final ensembleF = _api
-        .ensembleRaw()
+        .ensembleRaw(city)
         .then<String?>((v) => v)
         .catchError((_) => null);
-    final inmetF = _api
-        .inmetRaw()
-        .then<String?>((v) => v)
-        .catchError((_) => null);
+    // Avisos do INMET só existem para municípios brasileiros com código IBGE.
+    final ibge = city.ibgeCode;
+    final inmetF = ibge == null
+        ? Future<String?>.value(null)
+        : _api.inmetRaw().then<String?>((v) => v).catchError((_) => null);
 
     ForecastInput forecast;
     try {
@@ -66,11 +71,11 @@ class WeatherRepository {
       if (forecast.dates.isEmpty) {
         throw const FormatException('previsão sem dias');
       }
-      await _cache.write(WeatherCache.forecastKey, raw);
+      await _cache.write(WeatherCache.forecastKey(city.id), raw);
     } catch (_) {
       // Rede/parse falhou: tenta o cache, por mais antigo que seja.
       if (cachedForecast != null) {
-        final snap = await _fromCache(cachedForecast, offline: true);
+        final snap = await _fromCache(city, cachedForecast, offline: true);
         if (snap != null) return snap;
       }
       rethrow;
@@ -87,32 +92,29 @@ class WeatherRepository {
         if (ensemble.totalMembers == 0) {
           ensemble = null;
         } else {
-          await _cache.write(WeatherCache.ensembleKey, ensembleRaw);
+          await _cache.write(WeatherCache.ensembleKey(city.id), ensembleRaw);
         }
       } catch (_) {
         ensemble = null;
       }
     }
-    ensemble ??= await _recentEnsembleFromCache();
+    ensemble ??= await _recentEnsembleFromCache(city);
 
     // Alertas (opcional).
     List<InmetAlert>? alerts;
     final inmetRaw = await inmetF;
-    if (inmetRaw != null) {
+    if (inmetRaw != null && ibge != null) {
       try {
-        alerts = InmetDto.parse(
-          jsonDecode(inmetRaw),
-          ibgeCode: AppConstants.ibgeCode,
-        );
+        alerts = InmetDto.parse(jsonDecode(inmetRaw), ibgeCode: ibge);
         await _cache.write(
-          WeatherCache.alertsKey,
+          WeatherCache.alertsKey(city.id),
           jsonEncode(alerts.map((a) => a.toJson()).toList()),
         );
       } catch (_) {
         alerts = null;
       }
     }
-    alerts ??= await _recentAlertsFromCache();
+    alerts ??= ibge == null ? const [] : await _recentAlertsFromCache(city);
 
     return WeatherSnapshot(
       forecast: forecast,
@@ -124,6 +126,7 @@ class WeatherRepository {
   }
 
   Future<WeatherSnapshot?> _fromCache(
+    City city,
     CacheEntry forecastEntry, {
     required bool offline,
   }) async {
@@ -135,9 +138,12 @@ class WeatherRepository {
       return WeatherSnapshot(
         forecast: forecast,
         ensemble: await _ensembleFromCache(
+          city,
           maxAge: offline ? null : AppConstants.secondaryCacheMaxAge,
         ),
-        alerts: await _recentAlertsFromCache(),
+        alerts: city.ibgeCode == null
+            ? const []
+            : await _recentAlertsFromCache(city),
         fetchedAt: forecastEntry.savedAt,
         offline: offline,
       );
@@ -146,11 +152,14 @@ class WeatherRepository {
     }
   }
 
-  Future<EnsembleInput?> _recentEnsembleFromCache() =>
-      _ensembleFromCache(maxAge: AppConstants.secondaryCacheMaxAge);
+  Future<EnsembleInput?> _recentEnsembleFromCache(City city) =>
+      _ensembleFromCache(city, maxAge: AppConstants.secondaryCacheMaxAge);
 
-  Future<EnsembleInput?> _ensembleFromCache({Duration? maxAge}) async {
-    final e = await _cache.read(WeatherCache.ensembleKey);
+  Future<EnsembleInput?> _ensembleFromCache(
+    City city, {
+    Duration? maxAge,
+  }) async {
+    final e = await _cache.read(WeatherCache.ensembleKey(city.id));
     if (e == null || (maxAge != null && e.age > maxAge)) return null;
     try {
       final parsed = EnsembleDto.parse(
@@ -162,8 +171,8 @@ class WeatherRepository {
     }
   }
 
-  Future<List<InmetAlert>> _recentAlertsFromCache() async {
-    final e = await _cache.read(WeatherCache.alertsKey);
+  Future<List<InmetAlert>> _recentAlertsFromCache(City city) async {
+    final e = await _cache.read(WeatherCache.alertsKey(city.id));
     if (e == null || e.age > AppConstants.secondaryCacheMaxAge) return const [];
     try {
       return (jsonDecode(e.body) as List)

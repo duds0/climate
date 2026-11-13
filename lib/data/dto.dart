@@ -94,6 +94,7 @@ abstract final class ForecastDto {
       hourlyPrecip: precip,
       hourlyCode: code,
       current: current,
+      utcOffset: Duration(seconds: _int(json['utc_offset_seconds']) ?? 0),
     );
   }
 }

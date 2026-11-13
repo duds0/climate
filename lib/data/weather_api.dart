@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../core/constants.dart';
+import '../domain/city.dart';
 
 /// Clientes HTTP (devolvem JSON decodificado; lançam exceção em falha).
 class WeatherApi {
@@ -20,18 +21,18 @@ class WeatherApi {
     return utf8.decode(res.bodyBytes, allowMalformed: true);
   }
 
-  Map<String, String> get _common => {
-    'latitude': '${AppConstants.latitude}',
-    'longitude': '${AppConstants.longitude}',
-    'timezone': AppConstants.timezone,
+  Map<String, String> _common(City city) => {
+    'latitude': '${city.latitude}',
+    'longitude': '${city.longitude}',
+    'timezone': city.timezone,
     'forecast_days': '${AppConstants.forecastDays}',
   };
 
   /// Retorna o corpo bruto (para cache) — o parse é feito depois.
-  Future<String> forecastRaw() => _get(
+  Future<String> forecastRaw(City city) => _get(
     Uri.parse(AppConstants.forecastUrl).replace(
       queryParameters: {
-        ..._common,
+        ..._common(city),
         'models': AppConstants.forecastModels.join(','),
         'daily':
             'temperature_2m_max,temperature_2m_min,precipitation_sum,'
@@ -44,10 +45,10 @@ class WeatherApi {
     ),
   );
 
-  Future<String> ensembleRaw() => _get(
+  Future<String> ensembleRaw(City city) => _get(
     Uri.parse(AppConstants.ensembleUrl).replace(
       queryParameters: {
-        ..._common,
+        ..._common(city),
         'models': AppConstants.ensembleModels.join(','),
         'hourly': 'precipitation',
       },

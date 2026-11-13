@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../core/constants.dart';
 import '../../domain/models.dart';
 import '../../domain/time_utils.dart';
 import '../../domain/weather_code.dart';
@@ -35,7 +34,7 @@ class _HomeBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final today = report.today;
-    final now = bahiaWallClock(DateTime.now());
+    final now = wallClock(DateTime.now(), report.utcOffset);
     final cur = report.current;
     final night = now.hour < 5 || now.hour >= 18;
 
@@ -55,7 +54,7 @@ class _HomeBody extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${AppConstants.cityName} · ${AppConstants.stateCode}',
+                    c.city.headerLabel,
                     style: theme.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -310,7 +309,7 @@ class _ConfidenceTile extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             Text(
-              'entre modelos',
+              'da chuva',
               style: theme.textTheme.labelSmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),

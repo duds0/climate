@@ -1,17 +1,5 @@
 /// Constantes do app. Tudo que é "ajustável" fica aqui.
 abstract final class AppConstants {
-  // ---- Local ----
-  static const cityName = 'Ipupiara';
-  static const stateCode = 'BA';
-  // Confirmado via geocoding-api.open-meteo.com (Ipupiara, Bahia).
-  static const latitude = -11.82028;
-  static const longitude = -42.61417;
-  static const timezone = 'America/Bahia';
-  static const ibgeCode = '2914109';
-
-  /// America/Bahia está fixo em UTC-3 (sem horário de verão desde 2019).
-  static const bahiaUtcOffset = Duration(hours: -3);
-
   // ---- Modelos ----
   static const forecastModels = [
     'ecmwf_ifs025',
@@ -37,8 +25,8 @@ abstract final class AppConstants {
   static const rainIconProbability = 0.60;
 
   // ---- Confiança ----
-  static const tempSpreadHigh = 2.0; // °C: <= alta
-  static const tempSpreadMedium = 4.0; // °C: <= média; acima baixa
+  // A confiança considera só a chuva: concordância entre modelos e
+  // probabilidade "incerta" (entre estes limites) rebaixa um nível.
   static const uncertainProbLow = 0.30;
   static const uncertainProbHigh = 0.70;
 
@@ -56,14 +44,20 @@ abstract final class AppConstants {
   static const forecastUrl = 'https://api.open-meteo.com/v1/forecast';
   static const ensembleUrl = 'https://ensemble-api.open-meteo.com/v1/ensemble';
   static const inmetUrl = 'https://apiprevmet3.inmet.gov.br/avisos/ativos';
+  static const geocodingUrl = 'https://geocoding-api.open-meteo.com/v1/search';
+  static const ibgeUrl = 'https://servicodados.ibge.gov.br/api/v1/localidades';
 
   static const satelliteBase =
       'https://satelite.cptec.inpe.br/repositoriogoes/goes19/goes19_web/ams_ret_ch13_baixa';
 
-  static const windyUrl =
-      'https://embed.windy.com/embed2.html'
-      '?lat=-11.82&lon=-42.61&detailLat=-11.82&detailLon=-42.61&zoom=7'
-      '&level=surface&overlay=rain&product=ecmwf&menu=&message=true&marker=true'
-      '&calendar=now&type=map&location=coordinates&detail=&metricWind=km%2Fh'
-      '&metricTemp=%C2%B0C&radarRange=-1';
+  /// Mapa do Windy (chuva) centrado na coordenada informada.
+  static String windyUrl(double lat, double lon) {
+    final la = lat.toStringAsFixed(2);
+    final lo = lon.toStringAsFixed(2);
+    return 'https://embed.windy.com/embed2.html'
+        '?lat=$la&lon=$lo&detailLat=$la&detailLon=$lo&zoom=7'
+        '&level=surface&overlay=rain&product=ecmwf&menu=&message=true&marker=true'
+        '&calendar=now&type=map&location=coordinates&detail=&metricWind=km%2Fh'
+        '&metricTemp=%C2%B0C&radarRange=-1';
+  }
 }

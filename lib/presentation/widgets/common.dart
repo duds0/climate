@@ -54,7 +54,7 @@ class ConfidenceBadge extends StatelessWidget {
     final color = level.color(theme.brightness);
     final text = compact
         ? capitalizeFirst(level.label)
-        : 'Confiança ${level.label}';
+        : 'Confiança na chuva: ${level.label}';
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: compact ? 8 : 10,

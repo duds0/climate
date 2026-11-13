@@ -13,10 +13,6 @@ enum Confidence {
     Confidence.baixa => Confidence.baixa,
   };
 
-  /// O pior (menos confiável) entre dois níveis.
-  static Confidence worst(Confidence a, Confidence b) =>
-      a.index >= b.index ? a : b;
-
   String get label => switch (this) {
     Confidence.alta => 'alta',
     Confidence.media => 'média',
@@ -169,35 +165,25 @@ class DayForecast {
 class ConfidenceResult {
   const ConfidenceResult({
     required this.level,
-    required this.temperature,
-    required this.rain,
-    required this.tempSpread,
     required this.modelsAgreeOnRain,
     required this.probabilityUncertain,
     required this.singleModel,
     this.limitedByCoverage = false,
   });
 
+  /// Confiança na previsão de chuva do dia.
   final Confidence level;
-  final Confidence temperature;
-  final Confidence rain;
-
-  /// Maior amplitude entre modelos (máx ou mín), em °C.
-  final double? tempSpread;
   final bool modelsAgreeOnRain;
 
   /// Probabilidade entre 30% e 70%.
   final bool probabilityUncertain;
 
-  /// Menos de 2 modelos disponíveis: não dá para medir divergência.
+  /// Menos de 2 modelos com dado de chuva: não dá para medir divergência.
   final bool singleModel;
 
   ConfidenceResult copyWith({Confidence? level, bool? limitedByCoverage}) =>
       ConfidenceResult(
         level: level ?? this.level,
-        temperature: temperature,
-        rain: rain,
-        tempSpread: tempSpread,
         modelsAgreeOnRain: modelsAgreeOnRain,
         probabilityUncertain: probabilityUncertain,
         singleModel: singleModel,
@@ -280,7 +266,11 @@ class WeatherReport {
     required this.current,
     required this.alerts,
     required this.ensembleAvailable,
+    this.utcOffset = Duration.zero,
   });
+
+  /// Deslocamento UTC do fuso da cidade (para calcular "agora" local).
+  final Duration utcOffset;
 
   final List<DayForecast> days;
   final List<HourPoint> hours;

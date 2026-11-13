@@ -429,13 +429,10 @@ class _ConfidenceExplanation extends StatelessWidget {
       );
     }
 
-    final tempText = c.singleModel || c.tempSpread == null
-        ? 'Só um modelo disponível: não dá para medir a divergência.'
-        : 'Os modelos diferem em até ${c.tempSpread!.toStringAsFixed(1).replaceAll('.', ',')} °C '
-              '(até 2 °C = alta, até 4 °C = média).';
-
     final rainText = StringBuffer(
-      c.modelsAgreeOnRain
+      c.singleModel
+          ? 'Só um modelo com dado de chuva: não dá para medir a divergência.'
+          : c.modelsAgreeOnRain
           ? 'Os modelos concordam sobre haver ou não chuva.'
           : 'Os modelos divergem: ${day.modelsWithRain} de ${day.modelsWithPrecipData} preveem chuva.',
     );
@@ -444,16 +441,20 @@ class _ConfidenceExplanation extends StatelessWidget {
         ' A probabilidade entre 30% e 70% reduz a confiança em um nível.',
       );
     }
+    if (c.limitedByCoverage) {
+      rainText.write(
+        ' Como nem todos os modelos cobrem este dia, a confiança fica limitada a média.',
+      );
+    }
 
     return Column(
       children: [
-        line(c.temperature, 'Temperatura', tempText),
-        line(c.rain, 'Chuva', rainText.toString()),
+        line(c.level, 'Chuva', rainText.toString()),
         const SizedBox(height: 4),
         Align(
           alignment: Alignment.centerLeft,
           child: Text(
-            'A confiança do dia é a pior das duas. Dias mais distantes tendem a ter confiança menor.',
+            'A confiança considera apenas a previsão de chuva. Dias mais distantes tendem a ter confiança menor.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
